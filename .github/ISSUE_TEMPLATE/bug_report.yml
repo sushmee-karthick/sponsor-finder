@@ -1,0 +1,43 @@
+name: Bug report
+description: Report incorrect behavior or a data-quality problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, credentials, or personal data. For vulnerabilities, follow SECURITY.md.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Explain the actual and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Select ...
+        2. Filter by ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: data-source
+    attributes:
+      label: Data source and snapshot date
+      description: Include the filename or source URL and date when the issue involves sponsor data.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Python version, browser, operating system, and deployment type when relevant.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed credentials and personal data from this report.
+          required: true

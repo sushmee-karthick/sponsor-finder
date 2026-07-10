@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# These are generated data snapshots, not hand-maintained source files.
+latest_sponsors.csv linguist-generated=true
+sector_cache.csv linguist-generated=true

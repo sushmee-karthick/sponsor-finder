@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest a focused product or engineering improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or operational problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe the desired behavior rather than only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: data-impact
+    attributes:
+      label: Data-quality impact
+      description: Explain effects on sponsor identity, matching confidence, filtering, or snapshots.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

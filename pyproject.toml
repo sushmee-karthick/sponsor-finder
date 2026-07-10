@@ -1,0 +1,32 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["*.csv"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "SIM", "UP"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers -ra"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = [
+  "app",
+  "build_sector_dictionary",
+  "cache_store",
+  "companies_house",
+  "export_utils",
+  "sponsor_filter",
+]
+
+[tool.coverage.report]
+exclude_also = [
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]
+fail_under = 70
+show_missing = true
+skip_covered = true

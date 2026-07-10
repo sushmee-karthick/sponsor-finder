@@ -11,8 +11,9 @@ The website (app.py) imports these functions and shows the results.
 Keeping the logic here means we can test it without opening the website.
 """
 
-import re
 import difflib
+import re
+
 import pandas as pd
 
 # ---------------------------------------------------------------------------
@@ -21,17 +22,52 @@ import pandas as pd
 #    both become "northwind data labs".
 # ---------------------------------------------------------------------------
 _LEGAL_SUFFIXES = [
-    "limited", "ltd", "plc", "llp", "lp", "ltd.", "l.l.p", "company", "co",
+    "limited",
+    "ltd",
+    "plc",
+    "llp",
+    "lp",
+    "ltd.",
+    "l.l.p",
+    "company",
+    "co",
 ]
+
 
 def normalise_name(name: str) -> str:
     if not isinstance(name, str):
         return ""
     s = name.lower().strip()
-    s = re.sub(r"[.,&/()]", " ", s)          # drop punctuation
-    s = re.sub(r"\s+", " ", s).strip()        # collapse spaces
+    s = re.sub(r"[.,&/()]", " ", s)  # drop punctuation
+    s = re.sub(r"\s+", " ", s).strip()  # collapse spaces
     words = [w for w in s.split(" ") if w not in _LEGAL_SUFFIXES]
     return " ".join(words).strip()
+
+
+def _normalise_location(value) -> str:
+    """Return a conservative, case-insensitive location identity component."""
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", value).strip().casefold()
+
+
+def _key_parts(*parts: str) -> str:
+    """Join identity parts without delimiter-collision ambiguity."""
+    return "|".join(f"{len(part)}:{part}" for part in parts)
+
+
+def make_sponsor_key(org_name: str, town: str = "", county: str = "") -> str:
+    """Build a stable identity key for a sponsor at a particular location.
+
+    A sponsor name alone is not unique in the Home Office register. The town and
+    county are deliberately part of this key so unrelated branches such as two
+    different Subway locations are not collapsed into one result.
+    """
+    return _key_parts(
+        normalise_name(org_name),
+        _normalise_location(town),
+        _normalise_location(county),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -39,8 +75,13 @@ def normalise_name(name: str) -> str:
 #    of the 21 official sector sections (A-U). We only need the first 2 digits.
 # ---------------------------------------------------------------------------
 def sic_to_section(sic) -> tuple[str, str]:
+    raw_code = str(sic).strip() if sic is not None else ""
+    if re.fullmatch(r"99999(?:\.0+)?", raw_code):
+        # 99999 is the Companies House placeholder for a dormant company, not
+        # division 99's extraterritorial-organisation activity (99000).
+        return ("?", "Dormant company")
     try:
-        div = int(str(sic).strip()[:2])
+        div = int(raw_code[:2])
     except (ValueError, TypeError):
         return ("?", "Unknown")
     table = [
@@ -90,7 +131,7 @@ def clean_town(s) -> str:
     (Londonderry, London Colney, London Road) alone."""
     if not isinstance(s, str):
         return ""
-    t = re.sub(r"[\-/]+", " ", s.strip())        # hyphens/slashes -> spaces
+    t = re.sub(r"[\-/]+", " ", s.strip())  # hyphens/slashes -> spaces
     t = re.sub(r"\s+", " ", t).strip(" ,.;:")
     if not t:
         return ""
@@ -105,8 +146,9 @@ def clean_town(s) -> str:
     main = t.split(",")[0].strip()
     # drop trailing tokens that are postcode fragments (contain a digit) or junk
     tokens = main.split(" ")
-    while len(tokens) > 1 and (any(ch.isdigit() for ch in tokens[-1])
-                               or tokens[-1].strip(".,-/") == ""):
+    while len(tokens) > 1 and (
+        any(ch.isdigit() for ch in tokens[-1]) or tokens[-1].strip(".,-/") == ""
+    ):
         tokens.pop()
     main = " ".join(tokens).strip(" ,.;:-/")
     if not main:
@@ -123,19 +165,84 @@ def looks_like_address(town: str) -> bool:
 
 # ---- Group towns into recognised MAIN places; everything else -> "Other" ----
 MAIN_PLACES = [
-    "London", "Manchester", "Birmingham", "Leeds", "Glasgow", "Edinburgh", "Liverpool",
-    "Bristol", "Sheffield", "Cardiff", "Belfast", "Newcastle", "Nottingham", "Leicester",
-    "Coventry", "Bradford", "Cambridge", "Oxford", "Reading", "Brighton", "Southampton",
-    "Portsmouth", "Aberdeen", "Dundee", "Inverness", "Stirling", "Perth", "Swansea",
-    "Newport", "Wrexham", "Londonderry", "Derry", "Derby", "Plymouth", "Wolverhampton",
-    "Stoke", "Sunderland", "Preston", "Norwich", "Bournemouth", "Luton", "Middlesbrough",
-    "Blackpool", "Hull", "York", "Peterborough", "Slough", "Watford", "Exeter", "Gloucester",
-    "Bath", "Chelmsford", "Basingstoke", "Ipswich", "Swindon", "Crawley", "Colchester",
-    "Maidstone", "Bolton", "Warrington", "Doncaster", "Telford", "Woking", "Guildford",
-    "Chester", "Solihull", "Northampton", "Stevenage", "Harlow", "Redhill", "Uxbridge",
+    "London",
+    "Manchester",
+    "Birmingham",
+    "Leeds",
+    "Glasgow",
+    "Edinburgh",
+    "Liverpool",
+    "Bristol",
+    "Sheffield",
+    "Cardiff",
+    "Belfast",
+    "Newcastle",
+    "Nottingham",
+    "Leicester",
+    "Coventry",
+    "Bradford",
+    "Cambridge",
+    "Oxford",
+    "Reading",
+    "Brighton",
+    "Southampton",
+    "Portsmouth",
+    "Aberdeen",
+    "Dundee",
+    "Inverness",
+    "Stirling",
+    "Perth",
+    "Swansea",
+    "Newport",
+    "Wrexham",
+    "Londonderry",
+    "Derry",
+    "Derby",
+    "Plymouth",
+    "Wolverhampton",
+    "Stoke",
+    "Sunderland",
+    "Preston",
+    "Norwich",
+    "Bournemouth",
+    "Luton",
+    "Middlesbrough",
+    "Blackpool",
+    "Hull",
+    "York",
+    "Peterborough",
+    "Slough",
+    "Watford",
+    "Exeter",
+    "Gloucester",
+    "Bath",
+    "Chelmsford",
+    "Basingstoke",
+    "Ipswich",
+    "Swindon",
+    "Crawley",
+    "Colchester",
+    "Maidstone",
+    "Bolton",
+    "Warrington",
+    "Doncaster",
+    "Telford",
+    "Woking",
+    "Guildford",
+    "Chester",
+    "Solihull",
+    "Northampton",
+    "Stevenage",
+    "Harlow",
+    "Redhill",
+    "Uxbridge",
 ]
 _MAIN_MULTI = ["Milton Keynes"]
-_TOWN_EXCEPTIONS = {"london colney"}      # look like a main city but genuinely aren't
+_TOWN_EXCEPTIONS = {
+    "london colney",
+    "newcastle emlyn",
+    "newcastle under lyme",
+}  # contain a main-city token but are genuinely different places
 _STREET_WORDS = {"road", "street", "lane", "avenue", "drive", "close", "court", "way"}
 _MAIN_SINGLE = {p.lower(): p for p in MAIN_PLACES}
 # Only the longer names are safe to fuzzy-match (catches 'Birmingam' -> 'Birmingham'
@@ -152,9 +259,9 @@ def to_main_place(town) -> str:
     if low in _TOWN_EXCEPTIONS:
         return "Other"
     words = set(re.findall(r"[a-z]+", low))
-    if words & _STREET_WORDS:             # it's a street address, not a town
+    if words & _STREET_WORDS:  # it's a street address, not a town
         return "Other"
-    hits = words & set(_MAIN_SINGLE)      # exact word match (fast, precise)
+    hits = words & set(_MAIN_SINGLE)  # exact word match (fast, precise)
     if hits:
         return _MAIN_SINGLE[max(hits, key=len)]
     for phrase in _MAIN_MULTI:
@@ -184,26 +291,26 @@ def canonicalise_places(town_series: pd.Series) -> dict:
     if cache_key in _CANON_CACHE:
         return _CANON_CACHE[cache_key]
 
-    anchors = counts[counts >= 20].index.tolist()          # trusted correct spellings
+    anchors = counts[counts >= 20].index.tolist()  # trusted correct spellings
     anchors_lower = {a.lower(): a for a in anchors}
     anchor_keys = list(anchors_lower.keys())
 
     mapping = {"": ""}
     for town in counts.index:
         mp = to_main_place(town)
-        if mp != "Other":                                  # a known big city / district
+        if mp != "Other":  # a known big city / district
             mapping[town] = mp
             continue
         low = town.lower()
-        if low in anchors_lower:                           # already a trusted spelling
+        if low in anchors_lower:  # already a trusted spelling
             mapping[town] = town
             continue
-        if len(low) >= 5:                                  # rare spelling -> nearest anchor
+        if len(low) >= 5:  # rare spelling -> nearest anchor
             m = difflib.get_close_matches(low, anchor_keys, n=1, cutoff=0.88)
             if m:
                 mapping[town] = anchors_lower[m[0]]
                 continue
-        mapping[town] = town                               # keep its own name
+        mapping[town] = town  # keep its own name
 
     _CANON_CACHE[cache_key] = mapping
     return mapping
@@ -240,8 +347,7 @@ def load_and_clean(source) -> pd.DataFrame:
     cols = detect_columns(df)
     if "org_name" not in cols or "route" not in cols:
         raise ValueError(
-            "Could not find the company-name and route columns. "
-            f"Columns seen: {list(df.columns)}"
+            f"Could not find the company-name and route columns. Columns seen: {list(df.columns)}"
         )
 
     out = pd.DataFrame()
@@ -256,32 +362,64 @@ def load_and_clean(source) -> pd.DataFrame:
     out["rating"] = out["type_rating"].str.extract(r"\(([AB])\s*rating\)", expand=False).fillna("?")
 
     out["name_key"] = out["org_name"].apply(normalise_name)
-    out = out[out["name_key"] != ""]          # drop blank rows
-    out.attrs["columns_detected"] = cols       # remember which column was which
+    out = out[out["name_key"] != ""]  # drop blank rows
+    out.attrs["columns_detected"] = cols  # remember which column was which
     return out
 
 
 # ---------------------------------------------------------------------------
-# 5. Squash the long table into ONE row per company, listing all the visa
-#    routes it holds. (A company appears once per route in the raw file.)
+# 5. Squash the long table into ONE row per sponsor location, listing all the
+#    visa routes it holds. (A sponsor appears once per route in the raw file.)
 # ---------------------------------------------------------------------------
 def build_company_view(long_df: pd.DataFrame) -> pd.DataFrame:
+    work = long_df.copy()
+
+    for col in ("org_name", "town", "county", "route", "rating"):
+        if col not in work.columns:
+            work[col] = ""
+        work[col] = work[col].apply(lambda value: value.strip() if isinstance(value, str) else "")
+
+    # Do not trust a caller-supplied key blindly: old dataframes may not have
+    # one, and a blank key must never make unrelated sponsors share a group.
+    computed_name_keys = work["org_name"].apply(normalise_name)
+    if "name_key" not in work.columns:
+        work["name_key"] = computed_name_keys
+    else:
+        supplied_name_keys = work["name_key"].apply(normalise_name)
+        work["name_key"] = supplied_name_keys.where(supplied_name_keys != "", computed_name_keys)
+
+    work = work[work["name_key"] != ""]
+    work["sponsor_key"] = [
+        make_sponsor_key(org_name, town, county)
+        for org_name, town, county in zip(
+            work["org_name"], work["town"], work["county"], strict=False
+        )
+    ]
+    work["_route_rating_pair"] = list(zip(work["route"], work["rating"], strict=False))
+
     def join_unique(series):
         return "; ".join(sorted({x for x in series if x}))
 
+    def collect_route_rating_pairs(series):
+        return tuple(sorted({(route, rating) for route, rating in series if route}))
+
     grouped = (
-        long_df.groupby("name_key")
+        work.groupby("sponsor_key", sort=False)
         .agg(
+            name_key=("name_key", "first"),
             org_name=("org_name", "first"),
             town=("town", "first"),
             county=("county", "first"),
             routes=("route", join_unique),
             ratings=("rating", join_unique),
+            route_rating_pairs=("_route_rating_pair", collect_route_rating_pairs),
         )
         .reset_index()
     )
     # keep a list version of routes for easy filtering
-    grouped["route_list"] = grouped["routes"].str.split("; ")
+    grouped["route_list"] = grouped["routes"].apply(
+        lambda routes: routes.split("; ") if routes else []
+    )
     grouped["best_rating"] = grouped["ratings"].apply(
         lambda r: "A" if "A" in r else ("B" if "B" in r else "?")
     )
@@ -296,39 +434,233 @@ def build_company_view(long_df: pd.DataFrame) -> pd.DataFrame:
 #    separately from Companies House). If we have no info yet, we say so
 #    honestly instead of guessing.
 # ---------------------------------------------------------------------------
+_CACHE_OUTPUT_DEFAULTS = {
+    "company_number": "",
+    "sic_codes": "",
+    "sic_section": "?",
+    "sector_label": "Not looked up yet",
+    "website": "",
+    "careers_url": "",
+    "company_status": "",
+    "last_checked": "",
+    "matched_company_name": "",
+    "matched_location": "",
+    "lookup_status": "",
+    "match_confidence": "",
+    "match_reason": "",
+    "matching_policy": "",
+}
+_UNKNOWN_CACHE_SECTORS = {
+    "",
+    "Not looked up yet",
+    "Unknown",
+    "Unknown (no SIC code)",
+}
+
+
+def _deduplicate_cache(cache: pd.DataFrame, key: str) -> pd.DataFrame:
+    """Select one deterministic, useful cache row per identity key."""
+    candidates = cache[cache[key] != ""].copy()
+    if candidates.empty:
+        return candidates
+
+    candidates["_cache_enriched"] = (
+        ~candidates["sector_label"].isin(_UNKNOWN_CACHE_SECTORS)
+        | (candidates["sic_codes"] != "")
+        | (candidates["company_number"] != "")
+    )
+    candidates["_cache_completeness"] = candidates[list(_CACHE_OUTPUT_DEFAULTS)].ne("").sum(axis=1)
+    candidates["_cache_date"] = pd.to_datetime(candidates["last_checked"], errors="coerce")
+    candidates["_cache_order"] = range(len(candidates))
+
+    candidates = candidates.sort_values(
+        [key, "_cache_enriched", "_cache_date", "_cache_completeness", "_cache_order"],
+        kind="stable",
+        na_position="first",
+    ).drop_duplicates(key, keep="last")
+    return candidates.drop(
+        columns=[
+            "_cache_enriched",
+            "_cache_completeness",
+            "_cache_date",
+            "_cache_order",
+        ]
+    )
+
+
 def attach_sectors(companies: pd.DataFrame, cache: pd.DataFrame | None) -> pd.DataFrame:
     companies = companies.copy()
+
+    computed_company_keys = (
+        companies["org_name"].apply(normalise_name)
+        if "org_name" in companies.columns
+        else pd.Series("", index=companies.index, dtype=object)
+    )
+    if "name_key" in companies.columns:
+        supplied_company_keys = companies["name_key"].apply(normalise_name)
+        companies["name_key"] = computed_company_keys.where(
+            computed_company_keys != "", supplied_company_keys
+        )
+    else:
+        companies["name_key"] = computed_company_keys
+
+    if "sponsor_key" not in companies.columns:
+        towns = companies.get("town", pd.Series("", index=companies.index))
+        counties = companies.get("county", pd.Series("", index=companies.index))
+        companies["sponsor_key"] = [
+            make_sponsor_key(name_key, town, county)
+            for name_key, town, county in zip(companies["name_key"], towns, counties, strict=False)
+        ]
+
+    # Make repeated attachment safe instead of producing _x/_y columns.
+    companies = companies.drop(
+        columns=[col for col in _CACHE_OUTPUT_DEFAULTS if col in companies.columns]
+    )
+
     if cache is None or len(cache) == 0:
-        companies["sector_label"] = "Not looked up yet"
-        companies["sic_codes"] = ""
-        companies["website"] = ""
-        companies["careers_url"] = ""
+        for col, default in _CACHE_OUTPUT_DEFAULTS.items():
+            companies[col] = default
         return companies
 
     cache = cache.copy()
-    cache["name_key"] = cache["name_key"].astype(str)
-    keep = ["name_key", "sector_label", "sic_codes", "website", "careers_url"]
-    for col in keep:
+    for col in _CACHE_OUTPUT_DEFAULTS:
         if col not in cache.columns:
             cache[col] = ""
-    merged = companies.merge(cache[keep], on="name_key", how="left")
-    merged["sector_label"] = merged["sector_label"].fillna("Not looked up yet")
-    for col in ["sic_codes", "website", "careers_url"]:
-        merged[col] = merged[col].fillna("")
-    return merged
+        cache[col] = cache[col].fillna("").astype(str).str.strip()
+
+    # Repair legacy cache rows created before 99999 was distinguished from the
+    # true division-99 SIC code (99000). Without this migration-at-read-time,
+    # the existing cache would keep displaying dormant companies as
+    # international organisations indefinitely.
+    first_sic_code = cache["sic_codes"].str.split(",").str[0].str.strip()
+    dormant_mask = first_sic_code.str.fullmatch(r"99999(?:\.0+)?", na=False)
+    cache.loc[dormant_mask, "sic_section"] = "?"
+    cache.loc[dormant_mask, "sector_label"] = "Dormant company"
+
+    supplied_cache_keys = (
+        cache["name_key"].apply(normalise_name)
+        if "name_key" in cache.columns
+        else pd.Series("", index=cache.index, dtype=object)
+    )
+    computed_cache_keys = (
+        cache["org_name"].apply(normalise_name)
+        if "org_name" in cache.columns
+        else pd.Series("", index=cache.index, dtype=object)
+    )
+    # Legacy cache files sometimes have a missing or stale name_key. Prefer the
+    # source organisation name when available, then fall back to the old key.
+    cache["name_key"] = computed_cache_keys.where(computed_cache_keys != "", supplied_cache_keys)
+
+    sponsor_cache = None
+    legacy_name_cache = cache
+    if "sponsor_key" in cache.columns:
+        cache["sponsor_key"] = cache["sponsor_key"].fillna("").astype(str).str.strip()
+        sponsor_cache = _deduplicate_cache(cache, "sponsor_key").set_index("sponsor_key")
+        # Rows with a sponsor_key are safe only for that exact location. They
+        # must not become a name-only fallback for a different branch.
+        legacy_name_cache = cache[cache["sponsor_key"] == ""]
+
+    name_cache = _deduplicate_cache(legacy_name_cache, "name_key").set_index("name_key")
+
+    ambiguous_name = (companies["name_key"] != "") & companies["name_key"].duplicated(keep=False)
+    legacy_match = companies["name_key"].isin(name_cache.index)
+    exact_match = pd.Series(False, index=companies.index)
+    if sponsor_cache is not None:
+        exact_match = companies["sponsor_key"].isin(sponsor_cache.index)
+
+    for col, default in _CACHE_OUTPUT_DEFAULTS.items():
+        by_name = companies["name_key"].map(name_cache[col]).mask(ambiguous_name)
+        if sponsor_cache is not None:
+            by_sponsor = companies["sponsor_key"].map(sponsor_cache[col])
+            values = by_sponsor.combine_first(by_name)
+        else:
+            values = by_name
+        companies[col] = values.fillna(default)
+
+    legacy_applied = legacy_match & ~ambiguous_name & ~exact_match
+    blank_lookup_status = companies["lookup_status"] == ""
+    companies.loc[legacy_applied & blank_lookup_status, "lookup_status"] = "legacy_cache"
+    blank_matching_policy = companies["matching_policy"] == ""
+    companies.loc[legacy_applied & blank_matching_policy, "matching_policy"] = "legacy_name_key"
+    blank_match_reason = companies["match_reason"] == ""
+    companies.loc[legacy_applied & blank_match_reason, "match_reason"] = (
+        "Legacy cache match was based on sponsor name only."
+    )
+
+    needs_verification = ambiguous_name & legacy_match & ~exact_match
+    companies.loc[needs_verification, "sector_label"] = "Needs verification"
+    companies.loc[needs_verification, "lookup_status"] = "needs_verification"
+    companies.loc[needs_verification, "match_reason"] = (
+        "Multiple sponsor locations share this legacy name key."
+    )
+    companies.loc[needs_verification, "matching_policy"] = "legacy_name_key"
+
+    return companies
 
 
 # ---------------------------------------------------------------------------
 # 7. The actual filtering. Everything is optional; an empty choice = no filter.
 # ---------------------------------------------------------------------------
-def apply_filters(companies: pd.DataFrame,
-                  routes=None, ratings=None, towns=None, sectors=None) -> pd.DataFrame:
-    df = companies
+def _route_values(value) -> set[str]:
+    if isinstance(value, str):
+        return {route for route in value.split("; ") if route}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return {route for route in value if isinstance(route, str) and route}
+    return set()
 
-    if routes:
-        df = df[df["route_list"].apply(lambda rl: any(r in rl for r in routes))]
-    if ratings:
-        df = df[df["best_rating"].isin(ratings)]
+
+def _route_rating_values(value) -> set[tuple[str, str]]:
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return set()
+    pairs = set()
+    for pair in value:
+        if isinstance(pair, (list, tuple)) and len(pair) == 2:
+            route, rating = pair
+            if isinstance(route, str) and isinstance(rating, str) and route:
+                pairs.add((route, rating))
+    return pairs
+
+
+def apply_filters(
+    companies: pd.DataFrame, routes=None, ratings=None, towns=None, sectors=None
+) -> pd.DataFrame:
+    df = companies
+    selected_routes = {route for route in (routes or []) if route}
+    selected_ratings = {rating for rating in (ratings or []) if rating}
+
+    if selected_routes and selected_ratings and "route_rating_pairs" in df.columns:
+        # A route and rating must occur on the same raw sponsor-register row.
+        # Aggregating them independently would make an A-rated Skilled Worker
+        # route falsely satisfy an A + Global Business Mobility search.
+        def matches_pair(row) -> bool:
+            pairs = _route_rating_values(row["route_rating_pairs"])
+            if pairs:
+                return any(
+                    route in selected_routes and rating in selected_ratings
+                    for route, rating in pairs
+                )
+            return (
+                bool(_route_values(row.get("route_list", "")) & selected_routes)
+                and row.get("best_rating", "") in selected_ratings
+            )
+
+        df = df[df.apply(matches_pair, axis=1)]
+    else:
+        if selected_routes:
+            df = df[
+                df["route_list"].apply(lambda value: bool(_route_values(value) & selected_routes))
+            ]
+        if selected_ratings:
+            if "route_rating_pairs" in df.columns:
+                df = df[
+                    df["route_rating_pairs"].apply(
+                        lambda value: any(
+                            rating in selected_ratings for _, rating in _route_rating_values(value)
+                        )
+                    )
+                ]
+            else:
+                df = df[df["best_rating"].isin(selected_ratings)]
     if towns:
         col = "main_place" if "main_place" in df.columns else "town"
         df = df[df[col].isin(towns)]
@@ -340,19 +672,37 @@ def apply_filters(companies: pd.DataFrame,
 # ---------------------------------------------------------------------------
 # 8. Helper: the list of choices to show in each filter box.
 # ---------------------------------------------------------------------------
-def filter_options(companies: pd.DataFrame, long_df: pd.DataFrame,
-                   hide_address_like: bool = True) -> dict:
-    routes = sorted({r for rl in companies["route_list"] for r in rl if r})
-    ratings = sorted({r for r in companies["best_rating"] if r in ("A", "B")})
+def filter_options(
+    companies: pd.DataFrame, long_df: pd.DataFrame, hide_address_like: bool = True
+) -> dict:
+    routes = sorted({route for value in companies["route_list"] for route in _route_values(value)})
+    ratings = set()
+    if "route_rating_pairs" in companies.columns:
+        ratings.update(
+            rating
+            for value in companies["route_rating_pairs"]
+            for _, rating in _route_rating_values(value)
+            if rating in ("A", "B")
+        )
+    if "rating" in long_df.columns:
+        ratings.update(rating for rating in long_df["rating"] if rating in ("A", "B"))
+    if not ratings and "best_rating" in companies.columns:
+        ratings.update(rating for rating in companies["best_rating"] if rating in ("A", "B"))
+    ratings = sorted(ratings)
     sectors = (
         sorted(companies["sector_label"].unique().tolist())
-        if "sector_label" in companies.columns else []
+        if "sector_label" in companies.columns
+        else []
     )
 
     # Location options: use the grouped MAIN place (London, Manchester, ... , Other),
     # busiest first, with "Other" pushed to the bottom.
     col = "main_place" if "main_place" in companies.columns else "town"
-    place_series = companies[col][companies[col] != ""]
+    locations = companies
+    if hide_address_like:
+        raw_location_col = "town" if "town" in companies.columns else col
+        locations = companies[~companies[raw_location_col].apply(looks_like_address)]
+    place_series = locations[col][locations[col] != ""]
     counts = place_series.value_counts()
     towns = [t for t in counts.index.tolist() if t != "Other"]
     if "Other" in counts.index:

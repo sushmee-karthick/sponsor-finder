@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security policy
+    url: https://github.com/sushmee-karthick/sponsor-finder/security/policy
+    about: Read the private-reporting guidance. Never publish credentials in an issue.

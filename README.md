@@ -1,72 +1,139 @@
-# 🔎 UK Sponsor Finder
+# UK Sponsor Finder
 
-A website where anyone can upload the UK sponsor list (CSV) and filter it by
-**visa route**, **rating**, **town/city**, and **sector** — with sectors coming
-from official Companies House data, *not* guessed from the company name.
+[![CI](https://github.com/sushmee-karthick/sponsor-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/sushmee-karthick/sponsor-finder/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-2563EB.svg)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-app-FF4B4B.svg)](https://streamlit.io/)
 
-## What's in the folder
+UK Sponsor Finder turns the UK Visas and Immigration sponsor register into a searchable Streamlit
+application. Explore organisations by company name, visa route, sponsorship rating, location, and a
+candidate industry sector enriched from Companies House.
 
-| File | What it is | Plain words |
-|---|---|---|
-| `app.py` | The website | The screen people see and click |
-| `sponsor_filter.py` | The logic | The "brain" that does the filtering |
-| `build_sector_dictionary.py` | The enrichment script | "Machine 1" — looks up real sectors |
-| `sector_cache.csv` | The sector data | The saved answers the website reads (demo data for now) |
-| `sample_sponsors.csv` | A tiny test file | So you can try it without downloading the big file |
-| `requirements.txt` | The library list | What to install |
+> **Important:** a sponsor-list entry does not mean that an organisation has an open job or will
+> sponsor a particular application. Companies House matches are probabilistic because the official
+> sponsor register does not contain company numbers. Verify decisions against the
+> [official UKVI register](https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers)
+> and the organisation itself. This project does not provide immigration or legal advice.
 
-## Step 1 — Install the tools (one time)
+## Highlights
 
-Open a terminal in this folder and run:
+- Bundled sponsor snapshot with optional CSV upload
+- Route-aware rating filters that preserve the relationship between visa route and rating
+- Sponsor locations kept separate instead of collapsing same-name organisations across towns
+- Company-name search, location and sector filters, summary metrics, and full CSV export
+- Explicit unknown and ambiguous sector states instead of silent guessing
+- Confidence-aware Companies House matching with retry and rate-limit handling
+- Cached data preparation for responsive Streamlit interactions
+- Automated tests, linting, data-integrity checks, dependency updates, and Docker deployment
 
-```
-pip install -r requirements.txt
-```
+## Quick start
 
-## Step 2 — Run the website
+UK Sponsor Finder supports Python 3.11 and newer.
 
-```
+```bash
+git clone https://github.com/sushmee-karthick/sponsor-finder.git
+cd sponsor-finder
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip -r requirements.txt
 streamlit run app.py
 ```
 
-Your browser opens. Tick **"try it with the small sample file"** and play with the
-filters in the left sidebar. Everything works right away using the demo sector data.
+On Windows PowerShell, activate the environment with `.venv\Scripts\Activate.ps1`.
 
-## Step 3 — Use the real list
+The application uses `latest_sponsors.csv` by default. You can also upload a compatible UKVI CSV in
+the sidebar without replacing repository files.
 
-1. Download the real CSV from GOV.UK: search **"Register of licensed sponsors: workers"**.
-2. In the website, upload that file instead of using the sample.
-3. The visa, rating and town filters work immediately on the real file.
+## Optional Companies House enrichment
 
-## Step 4 — Get REAL sectors (the important part)
+Filtering works without an API key. A key is needed only for live sector lookup or batch enrichment.
 
-The demo sectors only cover the sample companies. To get real sectors for the
-whole list:
+1. Create a key through the
+   [Companies House developer service](https://developer.company-information.service.gov.uk/).
+2. Copy the safe template and add the key locally:
 
-1. Get a **free** Companies House API key:
-   https://developer.company-information.service.gov.uk/
-2. Tell your computer the key (do this in the terminal):
-   - Mac/Linux: `export CH_API_KEY="your-key-here"`
-   - Windows: `set CH_API_KEY=your-key-here`
-3. Run the background script on the real file:
+   ```bash
+   cp .env.example .env
+   # Edit .env and set CH_API_KEY. Never commit this file.
    ```
-   python build_sector_dictionary.py sponsors.csv
+
+3. To enrich a sponsor CSV in a resumable batch:
+
+   ```bash
+   python build_sector_dictionary.py path/to/sponsors.csv
    ```
-   This is slow (it can take a few hours for the full list) because the free API
-   has a speed limit. **You can stop it and run it again later** — it remembers
-   what it already did. When it finishes, `sector_cache.csv` is updated and the
-   website's sector filter works on the real data.
 
-## Good to know
+Search results are treated as candidates. Low-confidence, ambiguous, and transiently failed lookups
+must not be persisted as verified matches. Companies House enforces
+[API rate limits](https://developer.company-information.service.gov.uk/developer-guidelines/), so a
+complete refresh can take more than a day.
 
-- Being on the list means a company **can** sponsor — not that it has a job open
-  right now. Always check the company's own careers page.
-- Only **A-rated** sponsors can issue new visas, so the rating filter matters.
-- Companies appear once per visa they hold; the app removes those duplicates.
+## Data quality
 
-## What comes next (not built yet)
+The committed snapshot is described by `data_manifest.json`. Validate its row counts and checksums
+with:
 
-- **Find each company's website + careers page** (Phase 2).
-- **Check if they're hiring** by reading their job listings (Phase 3 — the hardest).
-- Put the website online for free with **Streamlit Community Cloud** or
-  **Hugging Face Spaces** so anyone can use it.
+```bash
+python scripts/validate_data.py
+```
+
+The current snapshot predates the manifest and has no recorded retrieval date; its sector cache uses
+a legacy, unverified matching policy. See [DATA_SOURCES.md](DATA_SOURCES.md) for provenance,
+limitations, and the review process required for snapshot updates.
+
+## Development
+
+Install development dependencies and run the complete local gate:
+
+```bash
+python -m pip install -r requirements-dev.txt
+make check
+```
+
+Equivalent commands are:
+
+```bash
+ruff check .
+ruff format --check .
+python scripts/validate_data.py
+pip-audit -r requirements.txt
+pytest
+```
+
+CI runs these checks on Python 3.11 and 3.13. Tests must mock Companies House and must never depend on
+a live API key or network access.
+
+## Deployment
+
+Run the production container locally:
+
+```bash
+docker build -t sponsor-finder .
+docker run --rm -p 8501:8501 --env-file .env sponsor-finder
+```
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Streamlit Community Cloud, health checks, secret
+configuration, and the changes required for multi-replica deployment.
+
+## Project structure
+
+| Path | Responsibility |
+|---|---|
+| `app.py` | Streamlit presentation, data-source selection, and user workflow |
+| `sponsor_filter.py` | CSV validation, sponsor identity, SIC mapping, and filtering |
+| `companies_house.py` | API client, retries, and confidence-aware candidate matching |
+| `cache_store.py` | Atomic, keyed local cache updates |
+| `export_utils.py` | Formula-safe CSV export serialization |
+| `build_sector_dictionary.py` | Resumable batch enrichment |
+| `data_manifest.json` | Snapshot provenance, row counts, and checksums |
+| `tests/` | Unit and Streamlit application tests |
+| `docs/` | Architecture and deployment guidance |
+
+The detailed component and trust-boundary design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Keep generated-data updates
+separate from application changes and include regression tests for filtering or matching changes.
+
+The repository owner has not yet selected a project licence. The owner should choose and document one
+before a release; source datasets may have separate terms and attribution requirements.
