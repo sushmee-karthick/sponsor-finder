@@ -21,6 +21,7 @@ import streamlit as st
 import companies_house as ch
 import export_utils
 import sponsor_filter as sf
+import ui_components as ui
 
 try:
     import cache_store
@@ -36,6 +37,28 @@ MANIFEST = Path(os.environ.get("SPONSOR_FINDER_MANIFEST", HERE / "data_manifest.
 
 LIVE_LOOKUP_CAP = 10
 PAGE_SIZES = (25, 50, 100, 250)
+OVERVIEW_COLUMNS = (
+    "Company",
+    "Town / city",
+    "County",
+    "Rating",
+    "Visa routes",
+    "Sector candidate",
+    "Sector data status",
+    "Website",
+    "Careers page",
+)
+AUDIT_COLUMNS = (
+    "Company",
+    "Matched Companies House name",
+    "Company number",
+    "Company status",
+    "Matched location",
+    "Name confidence",
+    "Match rationale",
+    "Matching policy",
+    "SIC codes",
+)
 UNKNOWN_SECTORS = {
     "",
     "not looked up yet",
@@ -44,24 +67,25 @@ UNKNOWN_SECTORS = {
     "unavailable",
     "needs verification",
 }
-FILTER_STATE_KEYS = (
-    "company_search",
-    "visa_routes",
-    "licence_ratings",
-    "sponsor_towns",
-    "sponsor_sectors",
-    "include_unknown_sectors",
-    "hide_address_locations",
-    "results_page",
-)
+FILTER_STATE_DEFAULTS: dict[str, Any] = {
+    "company_search": "",
+    "visa_routes": [],
+    "licence_ratings": [],
+    "sponsor_towns": [],
+    "sponsor_sectors": [],
+    "include_unknown_sectors": True,
+    "hide_address_locations": True,
+    "results_page": 1,
+}
 
 
 st.set_page_config(
-    page_title="UK Sponsor Finder",
+    page_title="Sponsor Finder · UK sponsor intelligence",
     page_icon="🔎",
     layout="wide",
     initial_sidebar_state="auto",
 )
+st.markdown(ui.GLOBAL_STYLES, unsafe_allow_html=True)
 
 
 def _file_version(path: Path) -> str:
@@ -266,8 +290,13 @@ def _safe_csv_bytes(frame: pd.DataFrame) -> bytes:
 
 
 def _clear_filters() -> None:
-    for key in FILTER_STATE_KEYS:
-        st.session_state.pop(key, None)
+    for key, default in FILTER_STATE_DEFAULTS.items():
+        st.session_state[key] = list(default) if isinstance(default, list) else default
+
+
+def _reset_results_page() -> None:
+    """Return to the first page whenever a result-changing filter changes."""
+    st.session_state["results_page"] = 1
 
 
 def _manifest_value(manifest: dict[str, Any], *keys: str) -> str:
@@ -338,21 +367,33 @@ def _display_frame(frame: pd.DataFrame) -> pd.DataFrame:
         "website": "Website",
         "careers_url": "Careers page",
     }
-    return display[columns].rename(columns=labels)
+    display = display[columns].rename(columns=labels)
+    for link_column in ("Website", "Careers page"):
+        if link_column in display.columns:
+            display[link_column] = display[link_column].map(ui.safe_http_url)
+    return display
+
+
+def _table_view(frame: pd.DataFrame, columns: tuple[str, ...]) -> pd.DataFrame:
+    """Select available presentation columns without weakening the full export."""
+    available = [column for column in columns if column in frame.columns]
+    return frame.loc[:, available]
 
 
 # ---- Page header and data source -----------------------------------------
-st.title("UK Sponsor Finder")
-st.write(
-    "Explore organisations on the UK register of licensed worker sponsors by "
-    "company, route, rating, location, and sector."
-)
-st.caption(
-    "Discovery tool, not immigration or legal advice. Always confirm current "
-    "licence details on the official UKVI register."
-)
+with st.container(key="sf_hero"):
+    st.markdown(ui.HERO_EYEBROW_HTML, unsafe_allow_html=True)
+    st.title("UK Sponsor Finder")
+    st.markdown(ui.HERO_LEDE_HTML, unsafe_allow_html=True)
+    st.markdown(ui.HERO_TRUST_HTML, unsafe_allow_html=True)
+    st.link_button("Verify on the GOV.UK register", ui.GOV_UK_REGISTER_URL)
+    st.caption(
+        "Discovery tool, not immigration or legal advice. Always confirm current "
+        "licence details on the official UKVI register."
+    )
 
-st.sidebar.header("Search and filters")
+st.sidebar.markdown(ui.SIDEBAR_BRAND_HTML, unsafe_allow_html=True)
+st.sidebar.caption("Search the sponsor snapshot and keep verification evidence in view.")
 source_choice = st.sidebar.radio(
     "Data source",
     ("Bundled register", "Upload a CSV"),
@@ -361,6 +402,7 @@ source_choice = st.sidebar.radio(
         "newer or custom register without changing repository data."
     ),
     key="data_source_choice",
+    on_change=_clear_filters,
 )
 
 source_path = ""
@@ -375,6 +417,7 @@ if source_choice == "Upload a CSV":
         type=("csv",),
         help="The file needs company/organisation and visa-route columns.",
         key="sponsor_csv_upload",
+        on_change=_clear_filters,
     )
     if upload is None:
         st.info("Choose a sponsor-register CSV in the sidebar to begin.")
@@ -443,32 +486,43 @@ if lookup_notice:
     getattr(st, level, st.info)(message)
 
 # ---- Filters --------------------------------------------------------------
+st.sidebar.divider()
+st.sidebar.subheader("Refine results")
 st.sidebar.text_input(
     "Company name",
-    placeholder="e.g. Northwind",
+    placeholder="Search a sponsor name",
     help="Case-insensitive, literal name search.",
     key="company_search",
+    on_change=_reset_results_page,
 )
 hide_address_locations = st.sidebar.checkbox(
     "Hide address-like locations",
     value=True,
     help="Removes entries that look like street addresses from the location choices.",
     key="hide_address_locations",
+    on_change=_reset_results_page,
 )
 options = sf.filter_options(companies, long_df, hide_address_like=hide_address_locations)
 
-selected_routes = st.sidebar.multiselect("Visa route", options.get("routes", []), key="visa_routes")
+selected_routes = st.sidebar.multiselect(
+    "Visa route",
+    options.get("routes", []),
+    key="visa_routes",
+    on_change=_reset_results_page,
+)
 selected_ratings = st.sidebar.multiselect(
     "Sponsor rating",
     options.get("ratings", []),
     help="Ratings are evaluated for the selected route where the source data permits it.",
     key="licence_ratings",
+    on_change=_reset_results_page,
 )
 selected_towns = st.sidebar.multiselect(
     "Town / city",
     options.get("towns", []),
     help="Locations are ordered by sponsor count. Type to search.",
     key="sponsor_towns",
+    on_change=_reset_results_page,
 )
 sector_options = [sector for sector in options.get("sectors", []) if not _is_unknown_sector(sector)]
 selected_sectors = st.sidebar.multiselect(
@@ -476,13 +530,20 @@ selected_sectors = st.sidebar.multiselect(
     sector_options,
     help="Sector labels come from Companies House candidate matches and require verification.",
     key="sponsor_sectors",
+    on_change=_reset_results_page,
 )
 include_unknown_sectors = st.sidebar.checkbox(
     "Include sponsors without sector data",
     value=True,
     key="include_unknown_sectors",
+    on_change=_reset_results_page,
 )
-st.sidebar.button("Clear filters", on_click=_clear_filters, key="clear_filters")
+st.sidebar.button(
+    "Reset all filters",
+    on_click=_clear_filters,
+    key="clear_filters",
+    width="stretch",
+)
 
 results = sf.apply_filters(
     companies,
@@ -514,14 +575,35 @@ source_summary = (
     f"{len(companies):,} sponsor records · "
     f"{all_known_count:,} with a sector candidate"
 )
-st.caption(source_summary)
+source_strip = st.container(key="sf_source_strip")
+source_columns = source_strip.columns((3, 2))
+with source_columns[0]:
+    st.markdown("**Data snapshot**")
+    st.caption(source_summary)
+with source_columns[1]:
+    st.markdown(
+        ui.snapshot_badge_html(
+            snapshot_status,
+            uploaded=source_choice == "Upload a CSV",
+        ),
+        unsafe_allow_html=True,
+    )
 
-metric_columns = st.columns(4)
+metrics_panel = st.container(key="sf_metrics")
+metric_columns = metrics_panel.columns(4)
 with metric_columns[0]:
-    st.metric("Matching sponsors", f"{len(results):,}")
+    st.metric(
+        "Matching sponsors",
+        f"{len(results):,}",
+        help="Sponsor records that match every active filter.",
+    )
 with metric_columns[1]:
     a_rated = int(results["best_rating"].eq("A").sum()) if "best_rating" in results.columns else 0
-    st.metric("A-rated matches", f"{a_rated:,}")
+    st.metric(
+        "A-rated matches",
+        f"{a_rated:,}",
+        help="Matches whose best route-aware licence rating is A.",
+    )
 with metric_columns[2]:
     place_column = "main_place" if "main_place" in results.columns else "town"
     location_count = (
@@ -529,18 +611,47 @@ with metric_columns[2]:
         if place_column in results.columns
         else 0
     )
-    st.metric("Locations", f"{location_count:,}")
+    st.metric(
+        "Locations",
+        f"{location_count:,}",
+        help="Distinct locations represented in the matching sponsor records.",
+    )
 with metric_columns[3]:
     result_known = int((~_unknown_sector_mask(results)).sum())
     coverage = f"{(100 * result_known / len(results)):.0f}%" if len(results) else "—"
-    st.metric("Sector coverage", coverage)
+    st.metric(
+        "Candidate sector coverage",
+        coverage,
+        help="Share of matches with a Companies House sector candidate; verify every match.",
+    )
 
 # ---- Paginated results and full export -----------------------------------
-st.subheader("Results")
-if results.empty:
-    st.info("No sponsors match these filters. Remove a filter or broaden the company search.")
+results_panel = st.container(key="sf_results")
+results_panel.header("Search results")
+results_panel.caption(
+    "Start with sponsor-register details, then open Match audit to inspect the "
+    "Companies House candidate evidence."
+)
+active_filters = ui.active_filter_labels(
+    search=search_query,
+    routes=selected_routes,
+    ratings=selected_ratings,
+    towns=selected_towns,
+    sectors=selected_sectors,
+    include_unknown_sectors=include_unknown_sectors,
+)
+if active_filters:
+    results_panel.markdown(ui.filter_chips_html(active_filters), unsafe_allow_html=True)
 else:
-    control_columns = st.columns((1, 1, 3))
+    results_panel.caption("No active result filters · showing the complete sponsor snapshot.")
+
+if results.empty:
+    results_panel.info(
+        "No sponsors match these filters. Remove a filter or broaden the company search."
+    )
+else:
+    controls_panel = results_panel.container(key="sf_result_controls")
+    control_columns = controls_panel.columns((0.9, 0.9, 3.2))
     with control_columns[0]:
         page_size = st.selectbox("Rows per page", PAGE_SIZES, index=1, key="results_page_size")
     total_pages = max(1, math.ceil(len(results) / page_size))
@@ -577,30 +688,73 @@ else:
             mime="text/csv",
             help=f"Downloads all {len(results):,} matches, not only this page.",
             key="download_results",
+            type="primary",
+            width="stretch",
         )
 
-    column_config: dict[str, Any] = {}
-    if "Website" in display_page.columns:
-        column_config["Website"] = st.column_config.LinkColumn("Website")
-    if "Careers page" in display_page.columns:
-        column_config["Careers page"] = st.column_config.LinkColumn("Careers page")
-    st.dataframe(
-        display_page,
-        hide_index=True,
-        width="stretch",
-        column_config=column_config,
-    )
+    overview_page = _table_view(display_page, OVERVIEW_COLUMNS)
+    audit_page = _table_view(display_page, AUDIT_COLUMNS)
+    overview_tab, audit_tab = results_panel.tabs(("Sponsor overview", "Match audit"))
+    with overview_tab:
+        st.caption("Core sponsor-register fields with candidate sector context and useful links.")
+        overview_config: dict[str, Any] = {
+            "Company": st.column_config.TextColumn("Company", width="large"),
+            "Town / city": st.column_config.TextColumn("Town / city", width="medium"),
+            "County": st.column_config.TextColumn("County", width="medium"),
+            "Rating": st.column_config.TextColumn("Rating", width="small"),
+            "Visa routes": st.column_config.TextColumn("Visa routes", width="large"),
+            "Sector candidate": st.column_config.TextColumn("Sector candidate", width="medium"),
+            "Sector data status": st.column_config.TextColumn("Sector data status", width="large"),
+            "Website": st.column_config.LinkColumn(
+                "Website", display_text="Open website", width="small"
+            ),
+            "Careers page": st.column_config.LinkColumn(
+                "Careers", display_text="Open careers", width="small"
+            ),
+        }
+        st.dataframe(
+            overview_page,
+            hide_index=True,
+            width="stretch",
+            row_height=44,
+            column_config=overview_config,
+        )
+    with audit_tab:
+        st.caption(
+            "Candidate match evidence only. Confirm the legal entity and company number "
+            "before relying on sector information."
+        )
+        audit_config: dict[str, Any] = {
+            "Company": st.column_config.TextColumn("Sponsor", width="large"),
+            "Matched Companies House name": st.column_config.TextColumn(
+                "Companies House candidate", width="large"
+            ),
+            "Company number": st.column_config.TextColumn("Company no.", width="small"),
+            "Company status": st.column_config.TextColumn("Status", width="small"),
+            "Matched location": st.column_config.TextColumn("Matched location", width="medium"),
+            "Name confidence": st.column_config.TextColumn("Name confidence", width="small"),
+            "Match rationale": st.column_config.TextColumn("Match rationale", width="large"),
+            "Matching policy": st.column_config.TextColumn("Matching policy", width="medium"),
+            "SIC codes": st.column_config.TextColumn("SIC codes", width="medium"),
+        }
+        st.dataframe(
+            audit_page,
+            hide_index=True,
+            width="stretch",
+            row_height=44,
+            column_config=audit_config,
+        )
 
     page_missing = page_results[_unknown_sector_mask(page_results)]
     if len(page_missing):
-        st.caption(
+        results_panel.caption(
             f"{len(page_missing):,} sponsor(s) on this page have no sector candidate. "
             "Unknown values are retained rather than guessed."
         )
 
     # ---- Explicit, capped, location-aware Companies House lookup ----------
     api_key = _get_ch_key()
-    with st.expander("Look up missing sector candidates"):
+    with results_panel.expander("Look up missing sector candidates"):
         st.write(
             "Companies House matching is enrichment only. Check the company number and "
             "identity before relying on a sector. Lookups are capped and never expose your API key."
@@ -689,16 +843,38 @@ else:
                 st.rerun()
 
 # ---- Provenance and trust -------------------------------------------------
-with st.expander("Data provenance and limitations"):
+about_panel = st.container(key="sf_about")
+about_panel.header("About this data")
+about_panel.caption(
+    "Understand where the snapshot comes from, what candidate matching means, "
+    "and what you still need to verify."
+)
+with about_panel.expander("Data provenance and limitations"):
+    if source_choice == "Upload a CSV":
+        register_note = (
+            "- **Sponsor register:** the active CSV was supplied in this browser session. "
+            "Sponsor Finder cannot verify its source, retrieval date, or currency; confirm "
+            "licence details on the [official UKVI register]"
+            "(https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers).\n"
+        )
+    else:
+        register_note = (
+            "- **Sponsor register:** the bundled CSV is a repository snapshot. Verify a "
+            "sponsor's current status on the [official UKVI register]"
+            "(https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers).\n"
+        )
     st.markdown(
-        "- **Sponsor register:** the bundled CSV is a repository snapshot. Verify a "
-        "sponsor's current status on the [official UKVI register](https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers).\n"
-        "- **Sector enrichment:** SIC sectors are Companies House candidate matches. "
-        "Similar company names can refer to different legal entities; verify the company number.\n"
-        "- **What inclusion means:** a sponsor licence does not mean there is an open job, "
-        "that the organisation will sponsor a particular role, or that sponsorship is guaranteed.\n"
-        "- **Uploaded files:** uploads are processed in the running app session and do not "
-        "replace the repository's bundled register."
+        register_note
+        + (
+            "- **Sector enrichment:** SIC sectors are Companies House candidate matches. "
+            "Similar company names can refer to different legal entities; verify the company "
+            "number.\n"
+            "- **What inclusion means:** a sponsor licence does not mean there is an open job, "
+            "that the organisation will sponsor a particular role, or that sponsorship is "
+            "guaranteed.\n"
+            "- **Uploaded files:** uploads are processed in the running app session and do not "
+            "replace the repository's bundled register."
+        )
     )
     manifest_source = (
         _manifest_value(manifest, "sponsor_snapshot", "source_url")
@@ -712,10 +888,16 @@ with st.expander("Data provenance and limitations"):
         or _manifest_value(manifest, "source", "status")
     )
     sector_manifest_status = _manifest_value(manifest, "sector_cache", "verification_status")
-    if manifest_source:
-        st.caption(f"Snapshot source recorded in the data manifest: {manifest_source}")
-    if manifest_status:
-        st.caption(f"Snapshot verification status: {manifest_status}")
+    if source_choice == "Bundled register":
+        if manifest_source:
+            st.caption(f"Snapshot source recorded in the data manifest: {manifest_source}")
+        if manifest_status:
+            st.caption(f"Snapshot verification status: {manifest_status}")
+    else:
+        st.caption(
+            f"Active source: uploaded CSV {source_label}. Repository snapshot provenance "
+            "metadata does not apply to this file."
+        )
     if sector_manifest_status:
         st.caption(f"Sector cache verification status: {sector_manifest_status}")
     if cache_meta["last_checked"]:
@@ -723,3 +905,5 @@ with st.expander("Data provenance and limitations"):
             "Latest recorded Companies House cache check: "
             f"{cache_meta['last_checked']} (individual records may be older)."
         )
+
+st.markdown(ui.FOOTER_HTML, unsafe_allow_html=True)

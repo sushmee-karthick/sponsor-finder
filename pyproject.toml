@@ -20,6 +20,7 @@ source = [
   "companies_house",
   "export_utils",
   "sponsor_filter",
+  "ui_components",
 ]
 
 [tool.coverage.report]
