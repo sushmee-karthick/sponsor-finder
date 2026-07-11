@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "sponsor_snapshot": {
+    "path": "latest_sponsors.csv",
+    "source_url": "https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers",
+    "retrieved_at": null,
+    "row_count": 142144,
+    "sha256": "bbc10cfaa6ca7b96a9b15037bbc7ba4d37a30150fcc8668caf22033cf59a12e6",
+    "provenance_status": "legacy snapshot; retrieval date was not recorded"
+  },
+  "sector_cache": {
+    "path": "sector_cache.csv",
+    "source_url": "https://developer.company-information.service.gov.uk/",
+    "row_count": 126082,
+    "sha256": "a5cce2af570bd8e08939e36761180aaad28bbfa0cce2c33a28cd9b342d86d9e5",
+    "matching_policy": "legacy first-result matching",
+    "verification_status": "unverified"
+  }
+}

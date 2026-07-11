@@ -1,4 +1,19 @@
 __pycache__/
-   *.pyc
-   .env
-   latest_sponsors.csv.tmp
+*.py[cod]
+*$py.class
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.DS_Store
+latest_sponsors.csv.tmp
+sector_cache.csv.tmp
